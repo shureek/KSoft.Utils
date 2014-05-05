@@ -3,10 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using IO = System.IO;
 using System.Diagnostics;
 
-namespace KSoft.Utils
+namespace KSoft.IO
 {
     /// <summary>
     /// Implements <see cref="T:System.IO.TextReader" /> that reads characters from a byte stream in a particular encoding.
@@ -15,7 +14,7 @@ namespace KSoft.Utils
     /// This class is similar to <see cref="T:System.IO.StreamReader" />. In addition, it tracks current line number, char position (absolute and in current line).
     /// Also, it supports ReadTo specific characters and quoted strings.
     /// </remarks>
-    public sealed class StreamReader : IO.TextReader
+    public class StreamReader : System.IO.TextReader
     {
         char[] charBuffer;
         int charLen;
@@ -25,20 +24,12 @@ namespace KSoft.Utils
         int byteLen;
         int bytePos;
 
-        IO.Stream stream;
+        System.IO.Stream stream;
         bool closable;
-
-        Encoding encoding;
-        Decoder decoder;
-        bool detectEncoding;
-        int maxCharsPerBuffer;
-
-        bool checkPreamble;
-        byte[] preamble;
 
         bool isBlocked;
 
-        void Init(IO.Stream stream, Encoding encoding, bool detectEncodingFromByteOrderMarks, int bufferSize, bool leaveOpen)
+        void Init(System.IO.Stream stream, Encoding encoding, bool detectEncodingFromByteOrderMarks, int bufferSize, bool leaveOpen)
         {
             this.stream = stream;
             this.encoding = encoding;
@@ -52,7 +43,7 @@ namespace KSoft.Utils
             bytePos = 0;
             detectEncoding = detectEncodingFromByteOrderMarks;
             preamble = encoding.GetPreamble();
-            checkPreamble = preamble.Length > 0;
+            isPreamble = preamble.Length > 0;
             isBlocked = false;
             closable = !leaveOpen;
         }
@@ -86,7 +77,7 @@ namespace KSoft.Utils
         {
             charLen = 0;
             charPos = 0;
-            if (!checkPreamble)
+            if (!isPreamble)
             {
                 bytePos = 0;
                 byteLen = 0;
@@ -99,19 +90,33 @@ namespace KSoft.Utils
                     break;
                 byteLen += num;
                 isBlocked = byteLen < byteBuffer.Length;
-                if (!IsPreamble())
-                {
+                //if (!SkipPreamble())
+                //{
 
-                }
+                //}
             }
         }
 
-        bool IsPreamble()
+        #region Encoding handling
+
+        Encoding encoding;
+        Decoder decoder;
+        bool detectEncoding;
+        int maxCharsPerBuffer;
+
+        bool isPreamble;
+        byte[] preamble;
+
+        bool CheckPreamble()
         {
-            if (checkPreamble)
+            int num = byteLen > preamble.Length ? byteLen - preamble.Length : preamble.Length - byteLen;
+            int i = 0;
+            while (i < num)
             {
-                int num = byteLen > 
+                if (byteBuffer[bytePos] != )
             }
         }
+
+        #endregion
     }
 }

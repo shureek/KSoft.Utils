@@ -7,7 +7,7 @@
     <ProjectGuid>{8E6D50F9-0E5C-486C-80EE-0530067B6925}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>KSoft.Utils</RootNamespace>
+    <RootNamespace>KSoft</RootNamespace>
     <AssemblyName>KSoft.Utils</AssemblyName>
     <TargetFrameworkVersion>v4.5.1</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
@@ -41,13 +41,19 @@
   <ItemGroup>
     <Compile Include="Collections\ArraySegmentEnumerator.cs" />
     <Compile Include="Collections\Buffer.cs" />
+    <Compile Include="Data\BinaryData.cs" />
+    <Compile Include="Data\DataMisc.cs" />
     <Compile Include="Extensions.cs" />
+    <Compile Include="IO\File.cs" />
+    <Compile Include="IO\IOMisc.cs" />
     <Compile Include="Localizable.Designer.cs">
       <AutoGen>True</AutoGen>
       <DesignTime>True</DesignTime>
       <DependentUpon>Localizable.resx</DependentUpon>
     </Compile>
-    <Compile Include="StreamReader.cs" />
+    <Compile Include="IO\StreamReader.cs" />
+    <Compile Include="Native\WinAPI.cs" />
+    <Compile Include="Native\NativeMisc.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -57,6 +63,7 @@
     </EmbeddedResource>
     <EmbeddedResource Include="Localizable.ru.resx" />
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

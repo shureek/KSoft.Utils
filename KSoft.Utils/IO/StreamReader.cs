@@ -22,13 +22,8 @@ namespace KSoft.IO
 
         System.IO.Stream stream;
         bool closable;
-        int byteDelta;
-        long bytePosition;
-        long charPosition;
 
         bool beginOfStream;
-
-        bool isBlocked;
 
         public StreamReader(int charBufferSize = 2048)
         {
@@ -55,7 +50,6 @@ namespace KSoft.IO
                 SetEncoding(encoding);
 
             beginOfStream = true;
-            isBlocked = false;
             closable = !leaveOpen;
         }
 
@@ -101,6 +95,11 @@ namespace KSoft.IO
                 }
                 if (byteBuffer.Count > 0)
                 {
+                    if (beginOfStream)
+                    {
+                        // Detect encoding
+                        // Check preamble
+                    }
                     int bytesUsed;
                     int charsUsed;
                     decoder.Convert(byteBuffer, charBuffer, out bytesUsed, out charsUsed);

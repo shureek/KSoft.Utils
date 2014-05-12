@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using KSoft.Collections;
 
 namespace KSoft.IO
 {
@@ -11,39 +12,49 @@ namespace KSoft.IO
     /// Implements <see cref="T:System.IO.TextReader" /> that reads characters from a byte stream in a particular encoding.
     /// </summary>
     /// <remarks>
-    /// This class is similar to <see cref="T:System.IO.StreamReader" />. In addition, it tracks current line number, char position (absolute and in current line).
+    /// This class is similar to <see cref="T:System.IO.StreamReader" />. In addition, it tracks current line number, char position (absolute and in current line) and byte position (absolute).
     /// Also, it supports ReadTo specific characters and quoted strings.
     /// </remarks>
     public class StreamReader : System.IO.TextReader
     {
-        char[] charBuffer;
-        int charLen;
-        int charPos;
-
-        byte[] byteBuffer;
-        int byteLen;
-        int bytePos;
+        Buffer<char> charBuffer;
+        Buffer<byte> byteBuffer;
 
         System.IO.Stream stream;
         bool closable;
+        int byteDelta;
+        long bytePosition;
+        long charPosition;
+
+        bool beginOfStream;
 
         bool isBlocked;
 
-        void Init(System.IO.Stream stream, Encoding encoding, bool detectEncodingFromByteOrderMarks, int bufferSize, bool leaveOpen)
+        public StreamReader(int charBufferSize = 2048)
         {
+            if (charBufferSize < 1)
+                throw new ArgumentOutOfRangeException("charBufferSize", "Buffer size must be positive");
+            charBuffer = new Buffer<char>(charBufferSize);
+            byteBuffer = new Buffer<byte>(); // capacity will be set when encoding is specified
+        }
+
+        /// <summary>
+        /// Opens stream for reading.
+        /// </summary>
+        /// <param name="stream">Stream to open.</param>
+        /// <param name="encoding">If not specified, encoding will be automatically detected.</param>
+        /// <param name="leaveOpen">If <value>false</value>, stream will be closed when Close method will be called.</param>
+        public void Open(System.IO.Stream stream, Encoding encoding = null, bool leaveOpen = true)
+        {
+            if (stream == null)
+                throw new ArgumentNullException("stream");
+
             this.stream = stream;
-            this.encoding = encoding;
-            this.decoder = encoding.GetDecoder();
-            this.byteBuffer = new byte[bufferSize];
-            this.maxCharsPerBuffer = encoding.GetMaxCharCount(bufferSize);
-            this.charBuffer = new char[maxCharsPerBuffer];
-            charLen = 0;
-            charPos = 0;
-            byteLen = 0;
-            bytePos = 0;
-            detectEncoding = detectEncodingFromByteOrderMarks;
-            preamble = encoding.GetPreamble();
-            isPreamble = preamble.Length > 0;
+
+            if (encoding != null)
+                SetEncoding(encoding);
+
+            beginOfStream = true;
             isBlocked = false;
             closable = !leaveOpen;
         }
@@ -55,12 +66,18 @@ namespace KSoft.IO
 
         public override int Read()
         {
-            return base.Read();
+            if (!FillBuffer())
+                return -1;
+            int result = (int)charBuffer[0];
+            charBuffer.StartOffset++;
+            return result;
         }
 
         public override int Peek()
         {
-            return base.Peek();
+            if (!FillBuffer())
+                return -1;
+            return (int)charBuffer[0];
         }
 
         public override string ReadLine()
@@ -73,48 +90,87 @@ namespace KSoft.IO
             return base.ReadToEnd();
         }
 
-        int ReadBuffer()
+        bool FillBuffer()
         {
-            charLen = 0;
-            charPos = 0;
-            if (!isPreamble)
+            if (charBuffer.Count == 0)
             {
-                bytePos = 0;
-                byteLen = 0;
+                if (byteBuffer.Count == 0)
+                {
+                    byteBuffer.Clear();
+                    stream.Read(byteBuffer);
+                }
+                if (byteBuffer.Count > 0)
+                {
+                    int bytesUsed;
+                    int charsUsed;
+                    decoder.Convert(byteBuffer, charBuffer, out bytesUsed, out charsUsed);
+                }
             }
+            return charBuffer.Count > 0;
+        }
 
-            while(true)
-            {
-                int num = stream.Read(byteBuffer, bytePos, byteBuffer.Length - bytePos);
-                if (num == 0)
-                    break;
-                byteLen += num;
-                isBlocked = byteLen < byteBuffer.Length;
-                //if (!SkipPreamble())
-                //{
-
-                //}
-            }
+        [DebuggerHidden]
+        void EnsureNotClosed()
+        {
+            if (stream == null)
+                throw new ObjectDisposedException(null, "Reader is closed");
         }
 
         #region Encoding handling
 
         Encoding encoding;
         Decoder decoder;
-        bool detectEncoding;
-        int maxCharsPerBuffer;
 
-        bool isPreamble;
-        byte[] preamble;
-
-        bool CheckPreamble()
+        /// <summary>
+        /// Skips encoding preamble bytes if they match.
+        /// </summary>
+        void SkipPreamble()
         {
-            int num = byteLen > preamble.Length ? byteLen - preamble.Length : preamble.Length - byteLen;
-            int i = 0;
-            while (i < num)
+            var preamble = encoding.GetPreamble();
+            if (preamble.Length > byteBuffer.Count)
             {
-                if (byteBuffer[bytePos] != )
+                Debug.WriteLine(String.Format("ByteLen ({0}) < Preamble.Length ({1})", byteBuffer.Count, preamble.Length));
+                return;
             }
+            int i = 0;
+            while (i < preamble.Length)
+            {
+                if (byteBuffer[i] != preamble[i])
+                    return;
+            }
+            byteBuffer.StartOffset += i;
+        }
+
+        public Encoding CurrentEncoding
+        {
+            get { return encoding; }
+        }
+
+        void SetEncoding(Encoding encoding)
+        {
+            if (encoding == null)
+                throw new ArgumentNullException("encoding");
+
+            this.encoding = encoding;
+            decoder = encoding.GetDecoder();
+            byteBuffer.SetCapacity(GetOptimalByteBufferSize());
+        }
+
+        /// <summary>
+        /// Finds maximum byte buffer size for which encoding.GetMaxCharCount() is less or equal to char buffer size.
+        /// </summary>
+        /// <returns>Optimal byte buffer size.</returns>
+        int GetOptimalByteBufferSize()
+        {
+            int bytesCount = encoding.GetMaxByteCount(charBuffer.Count);
+            while (encoding.GetMaxCharCount(bytesCount) > charBuffer.Count)
+                bytesCount--;
+            return bytesCount;
+        }
+
+        void DetectEncoding()
+        {
+            throw new NotImplementedException();
         }
 
         #endregion

@@ -39,6 +39,9 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Collections\ArraySegmentEnumerator.cs" />
+    <Compile Include="Collections\Buffer.cs" />
+    <Compile Include="Extensions.cs" />
     <Compile Include="Localizable.Designer.cs">
       <AutoGen>True</AutoGen>
       <DesignTime>True</DesignTime>

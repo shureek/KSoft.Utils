@@ -4,143 +4,12 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
-using KSoft.Native;
+using Microsoft.Win32.SafeHandles;
 
 namespace KSoft.IO
 {
-    public static class File
+    public static partial class FileEx
     {
-        #region HardLink methods
-
-        /// <summary>
-        /// Gets file hardlinks count.
-        /// </summary>
-        /// <param name="filepath">Full filename.</param>
-        /// <returns>Number of file hardlinks.</returns>
-        public static int GetFileLinkCount(string filepath)
-        {
-            int result = 0;
-            using (var handle = WinAPI.CreateFile(filepath, System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite, IntPtr.Zero, System.IO.FileMode.Open, System.IO.FileAttributes.Archive, null))
-            {
-                if (handle.IsInvalid)
-                    Marshal.ThrowExceptionForHR(Marshal.GetHRForLastWin32Error());
-
-                ByHandleFileInformation fileInfo;
-                if (WinAPI.GetFileInformationByHandle(handle, out fileInfo))
-                    result = fileInfo.NumberOfLinks;
-                else
-                    Marshal.ThrowExceptionForHR(Marshal.GetHRForLastWin32Error());
-            }
-            return result;
-        }
-
-        /// <summary>
-        /// Gets all file hardlinks.
-        /// </summary>
-        /// <param name="fileFile">Full filename.</param>
-        /// <returns>Array of file hardlinks.</returns>
-        public static string[] GetFileSiblingHardLinks(string fileFile)
-        {
-            List<string> result = new List<string>();
-            StringBuilder linkName = new StringBuilder(WinAPI.MaxPath);
-            WinAPI.GetVolumePathName(fileFile, linkName, linkName.Capacity);
-            string volume = linkName.ToString();
-            linkName.Length = 0;
-            int stringLength = WinAPI.MaxPath;
-            using (var findHandle = WinAPI.FindFirstFileNameW(fileFile, 0, ref stringLength, linkName))
-            {
-                if (findHandle.IsInvalid)
-                    Marshal.ThrowExceptionForHR(Marshal.GetLastWin32Error());
-
-                do
-                {
-                    StringBuilder pathSb = new StringBuilder(volume, WinAPI.MaxPath);
-                    WinAPI.PathAppend(pathSb, linkName.ToString());
-                    result.Add(pathSb.ToString());
-                    linkName.Length = 0;
-                    stringLength = WinAPI.MaxPath;
-                } while (WinAPI.FindNextFileNameW(findHandle, ref stringLength, linkName));
-            }
-            return result.ToArray();
-        }
-
-        #endregion
-
-        #region Copy methods
-
-        /// <summary>
-        /// Copies specified file to destination.
-        /// </summary>
-        /// <param name="sourceFileName">Source file name.</param>
-        /// <param name="destFileName">Destination file name.</param>
-        /// <param name="options">CopyOptions.</param>
-        /// <param name="cancellationToken">A token for cancelling copy operation.</param>
-        /// <param name="progress">IProgress object to get progress notifications on copy operation.</param>
-        public static void CopyFile(string sourceFileName, string destFileName, CopyOptions options = CopyOptions.None, CancellationToken? cancellationToken = null, IProgress<CopyProgressInfo> progress = null)
-        {
-            CopyFileCore(sourceFileName, destFileName, options, cancellationToken, progress);
-        }
-
-        /// <summary>
-        /// Copies specified file to destination asynchronously.
-        /// </summary>
-        /// <param name="sourceFileName">Source file name.</param>
-        /// <param name="destFileName">Destination file name.</param>
-        /// <param name="options">CopyOptions.</param>
-        /// <param name="cancellationToken">A token for cancelling copy operation.</param>
-        /// <param name="progress">IProgress object to get progress notifications on copy operation.</param>
-        /// <returns>A task to monitor operation progress.</returns>
-        public static Task CopyFileAsync(string sourceFileName, string destFileName, CopyOptions options = CopyOptions.None, CancellationToken? cancellationToken = null, IProgress<CopyProgressInfo> progress = null)
-        {
-            return Task.Factory.StartNew(() =>
-            {
-                CopyFileCore(sourceFileName, destFileName, options, cancellationToken, progress);
-            });
-        }
-
-        static void CopyFileCore(string sourceFileName, string destFileName, CopyOptions options, CancellationToken? cancellationToken, IProgress<CopyProgressInfo> progress)
-        {
-            GCHandle? hProgress = null;
-            try
-            {
-                bool cancelFlag = false;
-                if (cancellationToken != null)
-                    cancellationToken.Value.Register(() => { cancelFlag = true; });
-
-                CopyProgressRoutine copyCallback = null;
-                IntPtr pData = IntPtr.Zero;
-                if (progress != null)
-                {
-                    hProgress = GCHandle.Alloc(progress, GCHandleType.Normal); // для передачи progress через IntPtr
-                    pData = GCHandle.ToIntPtr(hProgress.Value);
-                    copyCallback = CopyCallbackProc;
-                }
-                bool ok = WinAPI.CopyFileEx(sourceFileName, destFileName, copyCallback, pData, ref cancelFlag, options);
-                if (!ok)
-                    Marshal.ThrowExceptionForHR(Marshal.GetHRForLastWin32Error());
-            }
-            finally
-            {
-                if (hProgress != null)
-                    hProgress.Value.Free();
-            }
-        }
-
-        static CopyCallbackResult CopyCallbackProc(long totalFileSize, long totalBytesTransferred, long streamSize, long streamBytesTransferred, uint streamNumber, IO.CopyEvent callbackReason, IntPtr sourceFileHandle, IntPtr destinationFileHandle, IntPtr pData)
-        {
-            IProgress<CopyProgressInfo> progress = null;
-            if (pData != IntPtr.Zero)
-            {
-                progress = (IProgress<CopyProgressInfo>)GCHandle.FromIntPtr(pData).Target;
-                progress.Report(new CopyProgressInfo(totalFileSize, totalBytesTransferred, streamSize, streamBytesTransferred, streamNumber, callbackReason));
-            }
-            return CopyCallbackResult.Continue;
-        }
-
-        #endregion
-
-        #region Other methods
-
         /// <summary>
         /// Retrieves the actual number of bytes of disk storage used to store a specified file.
         /// </summary>
@@ -154,11 +23,80 @@ namespace KSoft.IO
         {
             uint highOrder;
             uint lowOrder;
-            lowOrder = WinAPI.GetCompressedFileSize(fileName, out highOrder);
-            if (lowOrder == WinAPI.InvalidFileSize)
+            lowOrder = GetCompressedFileSize(fileName, out highOrder);
+            if (lowOrder == InvalidFileSize)
                 Marshal.ThrowExceptionForHR(Marshal.GetHRForLastWin32Error());
             return ((long)highOrder << 32) + lowOrder;
         }
+
+        #region WinAPI
+
+        const int MaxPath = 260;
+        const int MaxLongPath = 0x8000;
+        const uint InvalidFileSize = 0xFFFFFFFF;
+
+        /// <summary>
+        /// Creates or opens a file or I/O device.
+        /// </summary>
+        /// <param name="fileName">The name of the file or device to be created or opened. You may use either forward slashes (/) or backslashes (\) in this name.</param>
+        /// <param name="desiredAccess">The requested access to the file or device, which can be summarized as read, write, both or neither (zero).</param>
+        /// <param name="shareMode">The requested sharing mode of the file or device, which can be read, write, both, delete, all of these, or none.</param>
+        /// <param name="securityAttributes">A pointer to a SECURITY_ATTRIBUTES structure that contains two separate but related data members: an optional security descriptor, and a Boolean value that determines whether the returned handle can be inherited by child processes. This parameter can be <value>null</value>.</param>
+        /// <param name="creationDisposition">An action to take on a file or device that exists or does not exist.</param>
+        /// <param name="flagsAndAttributes">The file or device attributes and flags, FILE_ATTRIBUTE_NORMAL being the most common default value for files.</param>
+        /// <param name="templateFile">A valid handle to a template file with the GENERIC_READ access right. The template file supplies file attributes and extended attributes for the file that is being created. This parameter can be <value>null</value>.</param>
+        /// <returns>If the function succeeds, the return value is an open handle to the specified file, device, named pipe, or mail slot. If the function fails, the return value is INVALID_HANDLE_VALUE. To get extended error information, call GetLastError.</returns>
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        static extern SafeFileHandle CreateFile(
+            string fileName,
+            System.IO.FileAccess desiredAccess,
+            System.IO.FileShare shareMode,
+            IntPtr securityAttributes,
+            System.IO.FileMode creationDisposition,
+            System.IO.FileAttributes flagsAndAttributes,
+            SafeFileHandle templateFile);
+
+        /// <summary>
+        /// Retrieves file information for the specified file.
+        /// </summary>
+        /// <param name="handle">A handle to the file that contains the information to be retrieved. This handle should not be a pipe handle.</param>
+        /// <param name="fileInformation">A pointer to a BY_HANDLE_FILE_INFORMATION structure that receives the file information.</param>
+        /// <returns>If the function succeeds, the return value is nonzero and file information data is contained in the buffer pointed to by the lpFileInformation parameter.
+        /// If the function fails, the return value is zero. To get extended error information, call GetLastError.</returns>
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool GetFileInformationByHandle(SafeFileHandle handle, out ByHandleFileInformation fileInfo);
+
+        /// <summary>
+        /// Retrieves the volume mount point where the specified path is mounted.
+        /// </summary>
+        /// <remarks>
+        /// For example, assume that you have volume D mounted at C:\Mnt\Ddrive and volume E mounted at "C:\Mnt\Ddrive\Mnt\Edrive". Also assume that you have a file with the path <value>"E:\Dir\Subdir\MyFile"</value>. If you pass <value>"C:\Mnt\Ddrive\Mnt\Edrive\Dir\Subdir\MyFile"</value> to GetVolumePathName, it returns the path <value>"C:\Mnt\Ddrive\Mnt\Edrive\"</value>.
+        /// </remarks>
+        /// <param name="fileName">A pointer to the input path string. Both absolute and relative file and directory names, for example "..", are acceptable in this path.</param>
+        /// <param name="volumePathName">A pointer to a string that receives the volume mount point for the input path.</param>
+        /// <param name="bufferLength">The length of the output buffer, in TCHARs.</param>
+        /// <returns>If the function succeeds, the return value is nonzero.</returns>
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        static extern bool GetVolumePathName(string fileName, [Out] StringBuilder volumePathName, int bufferLength);
+
+        /// <summary>
+        /// Appends one path to the end of another.
+        /// </summary>
+        /// <remarks>
+        /// This function automatically inserts a backslash between the two strings, if one is not already present.
+        /// The path supplied in pszPath cannot begin with "..\\" or ".\\" to produce a relative path string. If present,
+        /// those periods are stripped from the output string. For example, appending "path3" to "..\\path1\\path2" results
+        /// in an output of "\path1\path2\path3" rather than "..\path1\path2\path3".
+        /// Misuse of this function can lead to a buffer overrun. We recommend the use of the safer PathCchAppend or PathCchAppendEx function in its place.
+        /// </remarks>
+        /// <param name="path">A pointer to a null-terminated string to which the path specified in pszMore is appended.</param>
+        /// <param name="more">A pointer to a null-terminated string of maximum length MAX_PATH that contains the path to be appended.</param>
+        /// <returns>Returns <value>true</value> if successful, or <value>false</value> otherwise.</returns>
+        [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
+        static extern bool PathAppend([In, Out] StringBuilder path, string more);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern uint GetCompressedFileSize(string fileName, out uint fileSizeHigh);
 
         #endregion
     }

@@ -44,7 +44,9 @@
     <Compile Include="Data\BinaryData.cs" />
     <Compile Include="Data\DataMisc.cs" />
     <Compile Include="Extensions.cs" />
+    <Compile Include="IO\Copy.cs" />
     <Compile Include="IO\File.cs" />
+    <Compile Include="IO\HardLink.cs" />
     <Compile Include="IO\IOMisc.cs" />
     <Compile Include="Localizable.Designer.cs">
       <AutoGen>True</AutoGen>
@@ -52,8 +54,6 @@
       <DependentUpon>Localizable.resx</DependentUpon>
     </Compile>
     <Compile Include="IO\StreamReader.cs" />
-    <Compile Include="Native\WinAPI.cs" />
-    <Compile Include="Native\NativeMisc.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

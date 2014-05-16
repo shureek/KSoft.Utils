@@ -4,15 +4,17 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{8E6D50F9-0E5C-486C-80EE-0530067B6925}</ProjectGuid>
-    <OutputType>Library</OutputType>
+    <ProjectGuid>{80C765AC-0592-49B3-A226-FBCDB2BF30C2}</ProjectGuid>
+    <OutputType>Exe</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>KSoft</RootNamespace>
-    <AssemblyName>KSoft.Utils</AssemblyName>
+    <RootNamespace>ConsoleTest</RootNamespace>
+    <AssemblyName>ConsoleTest</AssemblyName>
     <TargetFrameworkVersion>v4.5.1</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
@@ -22,6 +24,7 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
     <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
     <OutputPath>bin\Release\</OutputPath>
@@ -39,32 +42,18 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Collections\ArraySegmentEnumerator.cs" />
-    <Compile Include="Collections\Buffer.cs" />
-    <Compile Include="Data\BinaryData.cs" />
-    <Compile Include="Data\DataMisc.cs" />
-    <Compile Include="Extensions.cs" />
-    <Compile Include="IO\Copy.cs" />
-    <Compile Include="IO\Directory.cs" />
-    <Compile Include="IO\File.cs" />
-    <Compile Include="IO\HardLink.cs" />
-    <Compile Include="IO\IOMisc.cs" />
-    <Compile Include="Localizable.Designer.cs">
-      <AutoGen>True</AutoGen>
-      <DesignTime>True</DesignTime>
-      <DependentUpon>Localizable.resx</DependentUpon>
-    </Compile>
-    <Compile Include="IO\StreamReader.cs" />
+    <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="Localizable.resx">
-      <Generator>ResXFileCodeGenerator</Generator>
-      <LastGenOutput>Localizable.Designer.cs</LastGenOutput>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Localizable.ru.resx" />
+    <None Include="App.config" />
   </ItemGroup>
-  <ItemGroup />
+  <ItemGroup>
+    <ProjectReference Include="..\KSoft.Utils\KSoft.Utils.csproj">
+      <Project>{8e6d50f9-0e5c-486c-80ee-0530067b6925}</Project>
+      <Name>KSoft.Utils</Name>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

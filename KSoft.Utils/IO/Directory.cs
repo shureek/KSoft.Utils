@@ -13,178 +13,172 @@ namespace KSoft.IO
     {
         public IEnumerable<string> EnumerateFiles(string path, string searchPattern = "*", SearchOption searchOption = SearchOption.TopDirectoryOnly)
         {
-            System.IO.Directory.EnumerateFileSystemEntries()
+            IFindResultHandler<string> findResultHandler = new StringFindResultHandler(true, false);
+            return EnumerateFiles(path, searchPattern, searchOption == SearchOption.AllDirectories, findResultHandler, false);
         }
 
-        #region FileSystemInfo enumerator
-
-        class FSICollection<T> : IEnumerable<T>
+        IEnumerable<TResult> EnumerateFiles<TResult>(string path, string pattern, bool recursive, IFindResultHandler<TResult> findResultHandler, bool caseSensitive)
         {
-            public IEnumerator<T> GetEnumerator()
+            string filename = Path.Combine(path, pattern);
+            Win32FindData findData = new Win32FindData();
+            SearchAdditionalFlags flags = SearchAdditionalFlags.LargeFetch;
+            if (caseSensitive)
+                flags |= SearchAdditionalFlags.CaseSensitive;
+
+            List<string> directories = null;
+            if (recursive)
+                directories = new List<string>();
+
+            using (SafeFindHandle findHandle = FindFirstFileEx(filename, FIndexInfoLevels.Basic, findData, FIndexSearchOps.NameMatch, IntPtr.Zero, flags))
             {
-                throw new NotImplementedException();
+                bool ok = !findHandle.IsInvalid;
+                while (ok)
+                {
+                    if (findResultHandler.IsResultOK(path, findData))
+                        yield return findResultHandler.GetResult(path, findData);
+                    if (recursive && (findData.FileAttributes & FileAttributes.Directory) != 0)
+                        directories.Add(findData.FileName);
+                    ok = FindNextFile(findHandle, findData);
+                }
+                int errorCode = Marshal.GetLastWin32Error();
+                if (!(errorCode == ERROR_FILE_NOT_FOUND || errorCode == ERROR_NO_MORE_FILES || errorCode == ERROR_PATH_NOT_FOUND))
+                    Marshal.ThrowExceptionForHR(Marshal.GetHRForLastWin32Error());
             }
 
-            System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+            if (recursive)
             {
-                throw new NotImplementedException();
+                foreach (string directory in directories)
+                    foreach (TResult innerFile in EnumerateFiles<TResult>(Path.Combine(path, directory), pattern, true, findResultHandler, caseSensitive))
+                        yield return innerFile;
             }
         }
 
-        class FSIEnumerator<T> : IEnumerator<T>
+        interface IFindResultHandler<TResult>
         {
-            Win32FindData findData;
-            int state;
-            SafeFindHandle findHandle;
+            bool IsResultOK(string path, Win32FindData findData);
+            TResult GetResult(string path, Win32FindData findData);
+        }
 
-            SearchAdditionalFlags searchFlags;
-            string path;
-            string pattern;
+        class StringFindResultHandler : IFindResultHandler<string>
+        {
+            bool includeFiles;
+            bool includeDirectories;
 
-            public FSIEnumerator(string path, string pattern, bool caseSensitive = false, bool largeFetch = false)
+            public StringFindResultHandler(bool includeFiles, bool includeDirectories)
             {
-                this.path = path;
-                this.pattern = pattern;
-
-                searchFlags = 0;
-                if (caseSensitive)
-                    searchFlags |= SearchAdditionalFlags.CaseSensitive;
-                if (largeFetch)
-                    searchFlags |= SearchAdditionalFlags.LargeFetch;
+                this.includeFiles = includeFiles;
+                this.includeDirectories = includeDirectories;
             }
 
-            public T Current
+            public bool IsResultOK(string path, Win32FindData findData)
             {
-                get
-                {
-                    if (state != 1)
-                        throw new InvalidOperationException();
-
-                    if (typeof(T) == typeof(string))
-                        return findData.FileName as T;
-                }
+                if ((findData.FileAttributes & FileAttributes.Directory) != 0)
+                    return includeDirectories;
+                else
+                    return includeFiles;
             }
 
-            public void Dispose()
-            { }
-
-            object System.Collections.IEnumerator.Current
+            public string GetResult(string path, Win32FindData findData)
             {
-                get { return Current; }
+                return findData.FileName;
+            }
+        }
+
+        class FSIFindResultHandler : IFindResultHandler<FileSystemInfo>
+        {
+            bool includeFiles;
+            bool includeDirectories;
+
+            public FSIFindResultHandler(bool includeFiles, bool includeDirectories)
+            {
+                this.includeFiles = includeFiles;
+                this.includeDirectories = includeDirectories;
             }
 
-            public bool MoveNext()
+            public bool IsResultOK(string path, Win32FindData findData)
             {
-                if (state > 1)
-                    return false;
-
-                bool ok;
-
-                do
-                {
-                    if (state == 0)
-                    {
-                        string filename = Path.Combine(path, pattern);
-                        findHandle = FindFirstFileEx(filename, FIndexInfoLevels.Basic, findData, FIndexSearchOps.NameMatch, IntPtr.Zero, searchFlags);
-                        ok = !findHandle.IsInvalid;
-                        state = 1;
-                    }
-                    else
-                        ok = FindNextFile(findHandle, findData);
-
-                    if (ok)
-                    {
-                        //TODO: Check result
-                        return true;
-                    }
-                    else
-                    {
-                        int errorCode = Marshal.GetLastWin32Error();
-                        if (errorCode == ERROR_FILE_NOT_FOUND || errorCode == ERROR_NO_MORE_FILES || errorCode == ERROR_PATH_NOT_FOUND)
-                        {
-                            // Search finished
-                            state = 2;
-                            return false;
-                        }
-                    }
-                }
-                while (true);
+                if ((findData.FileAttributes & FileAttributes.Directory) != 0)
+                    return includeDirectories;
+                else
+                    return includeFiles;
             }
 
-            public void Reset()
+            public FileSystemInfo GetResult(string path, Win32FindData findData)
             {
-                throw new NotSupportedException();
+                string filename = Path.Combine(path, findData.FileName);
+                if ((findData.FileAttributes & FileAttributes.Directory) != 0)
+                    return new DirectoryInfo(filename);
+                else
+                    return new FileInfo(filename);
             }
+        }
 
-            #region WinAPI
+        #region WinAPI
 
-            const int ERROR_FILE_NOT_FOUND = 2;
-            const int ERROR_PATH_NOT_FOUND = 3;
-            const int ERROR_NO_MORE_FILES = 18;
+        const int ERROR_FILE_NOT_FOUND = 2;
+        const int ERROR_PATH_NOT_FOUND = 3;
+        const int ERROR_NO_MORE_FILES = 18;
 
-            [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true, BestFitMapping = false)]
-            static extern SafeFindHandle FindFirstFileEx(string fileName, FIndexInfoLevels infoLevel, [In, Out]Win32FindData fineFileData, FIndexSearchOps searchOp, IntPtr searchFilter, SearchAdditionalFlags flags);
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true, BestFitMapping = false)]
+        static extern SafeFindHandle FindFirstFileEx(string fileName, FIndexInfoLevels infoLevel, [In, Out]Win32FindData fineFileData, FIndexSearchOps searchOp, IntPtr searchFilter, SearchAdditionalFlags flags);
 
-            [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true, BestFitMapping = false)]
-            static extern bool FindNextFile(SafeFindHandle findHandle, [In, Out]Win32FindData findFileData);
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true, BestFitMapping = false)]
+        static extern bool FindNextFile(SafeFindHandle findHandle, [In, Out]Win32FindData findFileData);
 
-            [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Auto), BestFitMapping(false)]
-            class Win32FindData
-            {
-                public FileAttributes FileAttributes;
-                public ComTypes.FILETIME CreationTime;
-                public ComTypes.FILETIME LastAccessTime;
-                public ComTypes.FILETIME LastWriteTime;
-                public long FileSize;
-                long reserved;
-                [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
-                public string FileName;
-                [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 14)]
-                public string AlternateFileName;
-            }
+        [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Auto), BestFitMapping(false)]
+        class Win32FindData
+        {
+            public FileAttributes FileAttributes;
+            public ComTypes.FILETIME CreationTime;
+            public ComTypes.FILETIME LastAccessTime;
+            public ComTypes.FILETIME LastWriteTime;
+            public long FileSize;
+            long reserved;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+            public string FileName;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 14)]
+            public string AlternateFileName;
+        }
 
-            enum FIndexInfoLevels
-            {
-                /// <summary>
-                /// Standard set of attribute information.
-                /// </summary>
-                Standard,
-                /// <summary>
-                /// Does not query short file names.
-                /// </summary>
-                Basic
-            }
+        enum FIndexInfoLevels
+        {
+            /// <summary>
+            /// Standard set of attribute information.
+            /// </summary>
+            Standard,
+            /// <summary>
+            /// Does not query short file names.
+            /// </summary>
+            Basic
+        }
 
-            enum FIndexSearchOps
-            {
-                /// <summary>
-                /// The search for a file that matches a specified file name.
-                /// </summary>
-                NameMatch,
-                /// <summary>
-                /// If the file system supports directory filtering, the functions searches for directories only.
-                /// </summary>
-                /// <remarks>
-                /// The searchFilter parameter must be <value>null</value> when this search value is used.
-                /// </remarks>
-                LimitToDirectories
-            }
+        enum FIndexSearchOps
+        {
+            /// <summary>
+            /// The search for a file that matches a specified file name.
+            /// </summary>
+            NameMatch,
+            /// <summary>
+            /// If the file system supports directory filtering, the functions searches for directories only.
+            /// </summary>
+            /// <remarks>
+            /// The searchFilter parameter must be <value>null</value> when this search value is used.
+            /// </remarks>
+            LimitToDirectories
+        }
 
-            [Flags]
-            enum SearchAdditionalFlags
-            {
-                None = 0,
-                /// <summary>
-                /// Searches are case-sensitive.
-                /// </summary>
-                CaseSensitive = 1,
-                /// <summary>
-                /// Uses larger buffer for directory queries, which can increase performance of the find operation.
-                /// </summary>
-                LargeFetch = 2
-            }
-
-            #endregion
+        [Flags]
+        enum SearchAdditionalFlags
+        {
+            None = 0,
+            /// <summary>
+            /// Searches are case-sensitive.
+            /// </summary>
+            CaseSensitive = 1,
+            /// <summary>
+            /// Uses larger buffer for directory queries, which can increase performance of the find operation.
+            /// </summary>
+            LargeFetch = 2
         }
 
         #endregion

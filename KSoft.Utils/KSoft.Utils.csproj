@@ -55,6 +55,7 @@
       <DependentUpon>Localizable.resx</DependentUpon>
     </Compile>
     <Compile Include="IO\StreamReader.cs" />
+    <Compile Include="Net\TcpClient.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

@@ -129,9 +129,9 @@ namespace KSoft.IO
         class Win32FindData
         {
             public FileAttributes FileAttributes;
-            public ComTypes.FILETIME CreationTime;
-            public ComTypes.FILETIME LastAccessTime;
-            public ComTypes.FILETIME LastWriteTime;
+            public long CreationFileTime;
+            public long LastAccessFileTime;
+            public long LastWriteFileTime;
             public long FileSize;
             long reserved;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
